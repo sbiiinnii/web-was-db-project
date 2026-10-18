@@ -1,0 +1,25 @@
+<web-app xmlns="https://jakarta.ee/xml/ns/jakartaee"
+	version="6.0">
+
+
+	<servlet>
+		<servlet-name>HelloServlet</servlet-name>
+		<servlet-class>HelloServlet</servlet-class>
+	</servlet>
+
+	<servlet>
+		<servlet-name>UsersServlet</servlet-name>
+		<servlet-class>UsersServlet</servlet-class>
+	</servlet>
+
+	<servlet-mapping>
+		<servlet-name>HelloServlet</servlet-name>
+		<url-pattern>/hello</url-pattern>
+	</servlet-mapping>
+
+	<servlet-mapping>
+		<servlet-name>UsersServlet</servlet-name>
+		<url-pattern>/users</url-pattern>
+	</servlet-mapping>	
+
+</web-app>
