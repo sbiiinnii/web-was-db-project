@@ -563,3 +563,126 @@ Browser 출력 성공
 ```
 
 3-Tier Architecture의 전체 요청/응답 흐름을 구현하고 확인했습니다.
+
+## 15. HTTPS / TLS 적용
+
+### 15.1 적용 목적
+
+기존 HTTP(80) 통신을 HTTPS(443)로 확장하여 클라이언트와 WEB 서버 사이의 통신을 TLS로 암호화했습니다.
+
+Nginx에서 TLS Termination을 수행하고, 내부 WAS 서버와는 기존 HTTP(8080) 통신을 유지합니다.
+
+```text
+Windows Client
+      |
+      | HTTPS :443 (TLS)
+      v
+WEB - Nginx
+      |
+      | HTTP :8080
+      v
+WAS - Tomcat
+      |
+      | JDBC / TCP :3306
+      v
+DB - MariaDB
+```
+
+### 15.2 자체 서명 인증서 생성
+
+VMware 내부 실습 환경에서 OpenSSL을 이용해 자체 서명 인증서를 생성했습니다.
+
+```bash
+sudo mkdir -p /etc/nginx/ssl
+
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+-keyout /etc/nginx/ssl/server.key \
+-out /etc/nginx/ssl/server.crt \
+-subj "/CN=192.168.111.100" \
+-addext "subjectAltName=IP:192.168.111.100"
+```
+
+생성 파일:
+
+- `/etc/nginx/ssl/server.crt` — TLS 인증서
+- `/etc/nginx/ssl/server.key` — 개인키
+
+개인키는 root만 접근하도록 제한하며 GitHub에 업로드하지 않습니다.
+
+### 15.3 Nginx HTTPS 및 리다이렉트 설정
+
+프로젝트 설정 파일: `web/nginx-dbapp.conf`
+
+```nginx
+# HTTP → HTTPS
+server {
+    listen 80;
+    server_name _;
+
+    return 301 https://$host$request_uri;
+}
+
+# HTTPS Reverse Proxy
+server {
+    listen 443 ssl;
+    server_name _;
+
+    ssl_certificate /etc/nginx/ssl/server.crt;
+    ssl_certificate_key /etc/nginx/ssl/server.key;
+
+    location / {
+        proxy_pass http://192.168.111.200:8080;
+    }
+}
+```
+
+실제 Nginx 서버 설정에 적용한 후 다음 명령어로 검사 및 반영했습니다.
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 15.4 UFW 방화벽 설정
+
+HTTPS 접속을 위해 WEB 서버에서 TCP 443을 허용했습니다.
+
+```bash
+sudo ufw allow 443/tcp
+sudo ufw status
+```
+
+### 15.5 동작 검증
+
+Nginx가 443 포트에서 LISTEN 중인지 확인했습니다.
+
+```bash
+ss -lntp | grep :443
+```
+
+HTTP → HTTPS 자동 전환을 확인했습니다.
+
+```bash
+curl -I http://192.168.111.100/dbapp/users
+```
+
+확인 결과:
+
+```text
+HTTP/1.1 301 Moved Permanently
+Location: https://192.168.111.100/dbapp/users
+```
+
+Windows 브라우저에서 다음 HTTPS 주소로 접속하여 MariaDB에 저장된 이름이 정상적으로 출력되는 것을 확인했습니다.
+
+```text
+https://192.168.111.100/dbapp/users
+```
+
+### 15.6 보안 및 실습 환경의 한계
+
+- 자체 서명 인증서를 사용하므로 브라우저에 인증서 신뢰 경고가 표시됩니다.
+- TLS 암호화는 클라이언트와 Nginx 사이에 적용됩니다.
+- Nginx와 Tomcat 사이의 HTTP 통신은 별도로 암호화하지 않았습니다.
+- 실제 운영 환경에서는 신뢰할 수 있는 인증기관의 인증서와 적절한 도메인 구성을 사용해야 합니다.
+- 인증서 개인키와 DB 비밀번호는 Git 저장소에 포함하지 않습니다.
